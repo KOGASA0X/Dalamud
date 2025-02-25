@@ -87,8 +87,9 @@ public class BranchSwitcherWindow : Window
             if (File.Exists(xlPath))
             {
                 Process.Start(xlPath);
-                Environment.Exit(0);
             }
+
+            Environment.Exit(0);
         }
 
         return;
