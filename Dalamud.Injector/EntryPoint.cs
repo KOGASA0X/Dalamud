@@ -12,8 +12,6 @@ using System.Text.RegularExpressions;
 using Dalamud.Common;
 using Dalamud.Common.Game;
 
-using FfxivArgLauncher;
-
 using Newtonsoft.Json;
 using Reloaded.Memory.Buffers;
 using Serilog;
@@ -842,9 +840,6 @@ namespace Dalamud.Injector
                 noFixAcl,
                 p =>
                 {
-                    var argFix = new ArgFixer(p);
-                    argFix.Fix();
-
                     if (!withoutDalamud && dalamudStartInfo.LoadMethod == LoadMethod.Entrypoint)
                     {
                         var startInfo = AdjustStartInfo(dalamudStartInfo, gamePath);
