@@ -149,11 +149,9 @@ internal class PluginInstallerWindow : Window, IDisposable
     /// <param name="imageCache">An instance of <see cref="PluginImageCache"/> class.</param>
     /// <param name="configuration">An instance of <see cref="DalamudConfiguration"/>.</param>
     public PluginInstallerWindow(PluginImageCache imageCache, DalamudConfiguration configuration)
-        : base(
-            Locs.WindowTitle + (configuration.DoPluginTest ? Locs.WindowTitleMod_Testing : string.Empty) + "###XlPluginInstaller",
-            ImGuiWindowFlags.NoScrollbar)
+        : base("插件安装器###XlPluginInstaller", ImGuiWindowFlags.NoScrollbar)
     {
-        this.pluginListInstalled = new List<LocalPlugin>();
+        this.pluginListInstalled = [];
         this.IsOpen              = true;
         this.imageCache          = imageCache;
 
@@ -164,7 +162,7 @@ internal class PluginInstallerWindow : Window, IDisposable
         {
             MinimumSize = this.Size.Value,
         };
-
+        
         Service<PluginManager>.GetAsync().ContinueWith(pluginManagerTask =>
         {
             var pluginManager = pluginManagerTask.Result;
@@ -1317,7 +1315,16 @@ internal class PluginInstallerWindow : Window, IDisposable
         }
 
         // Filter out plugins that are not hidden
-        proxies = proxies.Where(IsProxyHidden).ToList();
+        proxies = proxies.Where(IsProxyHidden)
+                         .OrderBy(x =>
+                         {
+                             if (x.LocalPlugin != null)
+                                 return x.LocalPlugin.Manifest.InstalledFromUrl;
+                             if (x.RemoteManifest != null)
+                                 return x.RemoteManifest.SourceRepo.PluginMasterUrl;
+                             return string.Empty;
+                         })
+                         .ToList();
 
         return proxies;
     }
@@ -1326,22 +1333,41 @@ internal class PluginInstallerWindow : Window, IDisposable
     private void DrawAvailablePluginList()
     {
         var i = 0;
+        var lastRepoUrl = string.Empty;
         foreach (var proxy in this.GatherProxies())
         {
             IPluginManifest applicableManifest = proxy.LocalPlugin != null ? proxy.LocalPlugin.Manifest : proxy.RemoteManifest;
 
             if (applicableManifest == null)
                 throw new Exception("Could not determine manifest for available plugin");
-
+            
             ImGui.PushID($"{applicableManifest.InternalName}{applicableManifest.AssemblyVersion}");
-
+            
             if (proxy.LocalPlugin != null)
             {
+                if (!proxy.LocalPlugin.IsDev && lastRepoUrl != proxy.LocalPlugin.Manifest.InstalledFromUrl)
+                {
+                    lastRepoUrl = proxy.LocalPlugin.Manifest.InstalledFromUrl;
+
+                    using (ImRaii.Disabled())
+                        ImGui.Button($"{lastRepoUrl}",
+                                     new(ImGui.GetContentRegionAvail().X, 40f + ImGui.GetTextLineHeightWithSpacing()));
+                }
+
                 var update = this.pluginListUpdatable.FirstOrDefault(up => up.InstalledPlugin == proxy.LocalPlugin);
                 this.DrawInstalledPlugin(proxy.LocalPlugin, i++, proxy.RemoteManifest, update);
             }
             else if (proxy.RemoteManifest != null)
             {
+                if (lastRepoUrl != proxy.RemoteManifest.SourceRepo.PluginMasterUrl)
+                {
+                    lastRepoUrl = proxy.RemoteManifest.SourceRepo.PluginMasterUrl;
+
+                    using (ImRaii.Disabled())
+                        ImGui.Button($"{lastRepoUrl}",
+                                     new(ImGui.GetContentRegionAvail().X, 40f + ImGui.GetTextLineHeightWithSpacing()));
+                }
+                
                 this.DrawAvailablePlugin(proxy.RemoteManifest, i++);
             }
 
@@ -1368,6 +1394,7 @@ internal class PluginInstallerWindow : Window, IDisposable
 
         var filteredList = pluginList
                            .Where(plugin => !this.IsManifestFiltered(plugin.Manifest))
+                           .OrderBy(x => !x.IsDev ? x.Manifest.InstalledFromUrl : string.Empty)
                            .ToList();
 
         if (filteredList.Count == 0)
@@ -1378,6 +1405,7 @@ internal class PluginInstallerWindow : Window, IDisposable
 
         var drewAny = false;
         var i = 0;
+        var lastRepoUrl = string.Empty;
         foreach (var plugin in filteredList)
         {
             if (filter == InstalledPluginListFilter.Testing && !manager.HasTestingOptIn(plugin.Manifest))
@@ -1401,6 +1429,15 @@ internal class PluginInstallerWindow : Window, IDisposable
             else if (!plugin.IsDev)
             {
                 continue;
+            }
+            
+            if (!plugin.IsDev && remoteManifest != null && lastRepoUrl != remoteManifest.SourceRepo.PluginMasterUrl)
+            {
+                lastRepoUrl = remoteManifest.SourceRepo.PluginMasterUrl;
+
+                using (ImRaii.Disabled())
+                    ImGui.Button($"{lastRepoUrl}",
+                                 new(ImGui.GetContentRegionAvail().X, 40f + ImGui.GetTextLineHeightWithSpacing()));
             }
 
             this.DrawInstalledPlugin(plugin, i++, remoteManifest, update);
@@ -2155,20 +2192,11 @@ internal class PluginInstallerWindow : Window, IDisposable
             var devIconColor = KnownColor.MediumOrchid.Vector();
 
             if (plugin is LocalDevPlugin)
-            {
                 this.DrawFontawesomeIconOutlined(FontAwesomeIcon.Wrench, devIconOutlineColor, devIconColor);
-                this.VerifiedCheckmarkFadeTooltip(label, "This is a dev plugin. You added it.");
-            }
             else if (!flags.HasFlag(PluginHeaderFlags.IsThirdParty))
-            {
                 this.DrawFontawesomeIconOutlined(FontAwesomeIcon.CheckCircle, verifiedOutlineColor, verifiedIconColor);
-                this.VerifiedCheckmarkFadeTooltip(label, Locs.VerifiedCheckmark_VerifiedTooltip);
-            }
             else
-            {
                 this.DrawFontawesomeIconOutlined(FontAwesomeIcon.ExclamationCircle, unverifiedOutlineColor, unverifiedIconColor);
-                this.VerifiedCheckmarkFadeTooltip(label, Locs.VerifiedCheckmark_UnverifiedTooltip);
-            }
         }
 
         // Download count
@@ -2412,13 +2440,10 @@ internal class PluginInstallerWindow : Window, IDisposable
             ImGui.Indent();
 
             // Installable from
-            if (manifest.SourceRepo.IsThirdParty)
-            {
-                var repoText = Locs.PluginBody_Plugin3rdPartyRepo(manifest.SourceRepo.PluginMasterUrl);
-                ImGui.TextColored(ImGuiColors.DalamudGrey3, repoText);
+            var repoText = Locs.PluginBody_Plugin3rdPartyRepo(manifest.SourceRepo.PluginMasterUrl);
+            ImGui.TextColored(ImGuiColors.DalamudGrey3, repoText);
 
-                ImGuiHelpers.ScaledDummy(2);
-            }
+            ImGuiHelpers.ScaledDummy(2);
 
             // Description
             if (!string.IsNullOrWhiteSpace(manifest.Description))
@@ -2568,12 +2593,6 @@ internal class PluginInstallerWindow : Window, IDisposable
 
         // Name
         var label = plugin.Manifest.Name;
-
-        // Dev
-        if (plugin.IsDev)
-        {
-            label += Locs.PluginTitleMod_DevPlugin;
-        }
 
         // Testing
         if (plugin.IsTesting)
@@ -2754,7 +2773,7 @@ internal class PluginInstallerWindow : Window, IDisposable
                 var fileText = Locs.PluginBody_DevPluginPath(plugin.DllFile.FullName);
                 ImGui.TextColored(ImGuiColors.DalamudGrey3, fileText);
             }
-            else if (isThirdParty)
+            else
             {
                 var repoText = Locs.PluginBody_Plugin3rdPartyRepo(manifest.InstalledFromUrl);
                 ImGui.TextColored(ImGuiColors.DalamudGrey3, repoText);
@@ -3474,11 +3493,9 @@ internal class PluginInstallerWindow : Window, IDisposable
             return;*/
 
         var pluginManager = Service<PluginManager>.Get();
-
-        var devNotDeletable = plugin.IsDev && plugin.State != PluginState.Unloaded && plugin.State != PluginState.DependencyResolutionFailed;
-
+        
         ImGui.SameLine();
-        if (plugin.State == PluginState.Loaded || devNotDeletable)
+        if (plugin.State == PluginState.Loaded)
         {
             ImGui.PushFont(InterfaceManager.IconFont);
             ImGuiComponents.DisabledButton(FontAwesomeIcon.TrashAlt.ToIconString());
@@ -3504,10 +3521,6 @@ internal class PluginInstallerWindow : Window, IDisposable
                     else
                     {
                         plugin.ScheduleDeletion(!plugin.Manifest.ScheduledForDeletion);
-                    }
-
-                    if (plugin.State is PluginState.Unloaded or PluginState.DependencyResolutionFailed)
-                    {
                         pluginManager.RemovePlugin(plugin);
                     }
                 }
@@ -3652,9 +3665,9 @@ internal class PluginInstallerWindow : Window, IDisposable
     private bool IsManifestFiltered(IPluginManifest manifest)
     {
         var hasSearchString = !string.IsNullOrWhiteSpace(this.searchText);
-        var oldApi = (manifest.TestingDalamudApiLevel == null
-                            || manifest.TestingDalamudApiLevel < PluginManager.DalamudApiLevel)
-                          && manifest.DalamudApiLevel < PluginManager.DalamudApiLevel;
+        var oldApi = (manifest.TestingDalamudApiLevel    == null
+                      || manifest.TestingDalamudApiLevel < PluginManager.DalamudApiLevel)
+                     && manifest.DalamudApiLevel < PluginManager.DalamudApiLevel;
         var installed = this.IsManifestInstalled(manifest).IsInstalled;
 
         if (oldApi && !hasSearchString && !installed)
@@ -3663,27 +3676,65 @@ internal class PluginInstallerWindow : Window, IDisposable
         if (!hasSearchString)
             return false;
 
-        return this.GetManifestSearchScore(manifest) < 1;
+        return GetManifestSearchScore(manifest) < 100;
     }
 
     private int GetManifestSearchScore(IPluginManifest manifest)
     {
-        var searchString = this.searchText.ToLowerInvariant();
-        var matcher = new FuzzyMatcher(searchString, MatchMode.FuzzyParts);
-        var scores = new List<int> { 0 };
+        if (string.IsNullOrWhiteSpace(this.searchText))
+            return 0;
 
-        if (!manifest.Name.IsNullOrEmpty())
-            scores.Add(matcher.Matches(manifest.Name.ToLowerInvariant()) * 110);
-        if (!manifest.InternalName.IsNullOrEmpty())
-            scores.Add(matcher.Matches(manifest.InternalName.ToLowerInvariant()) * 105);
-        if (!manifest.Author.IsNullOrEmpty())
-            scores.Add(matcher.Matches(manifest.Author.ToLowerInvariant()) * 100);
-        if (!manifest.Punchline.IsNullOrEmpty())
-            scores.Add(matcher.Matches(manifest.Punchline.ToLowerInvariant()) * 100);
+        var searchQuery = this.searchText.Trim().ToLowerInvariant();
+        var searchTerms = searchQuery.Split([' '], StringSplitOptions.RemoveEmptyEntries);
+
+        if (searchTerms.Length == 0) return 0;
+
+        var totalScore = 0;
+
+        totalScore += CalculateMatchScore(searchTerms, manifest.Name,         weight: 200);
+        totalScore += CalculateMatchScore(searchTerms, manifest.InternalName, weight: 180);
+
+        totalScore += CalculateMatchScore(searchTerms, manifest.Author,    weight: 150);
+        totalScore += CalculateMatchScore(searchTerms, manifest.Punchline, weight: 120);
+
         if (manifest.Tags != null)
-            scores.Add(matcher.MatchesAny(manifest.Tags.ToArray()) * 100);
+        {
+            foreach (var tag in manifest.Tags)
+                totalScore += CalculateMatchScore(searchTerms, tag, weight: 100);
+        }
 
-        return scores.Max();
+        if (totalScore == 0) return -100;
+        return totalScore;
+    }
+
+    private int CalculateMatchScore(string[] searchTerms, string? target, int weight, bool requireFullMatch = false)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+            return 0;
+
+        var targetLower = target.Trim().ToLowerInvariant();
+        var score       = 0;
+
+        foreach (var term in searchTerms)
+        {
+            if (requireFullMatch)
+            {
+                if (targetLower.Equals(term))
+                    score += weight;
+            }
+            else
+            {
+                if (targetLower.StartsWith(term))
+                    score += (int)(weight * 1.2);
+                else if (targetLower.Contains(term))
+                    score += weight;
+            }
+        }
+
+        if (searchTerms.Any(term => term.Length >= 4 && targetLower.Contains(term)))
+            score += 50;
+
+        return score;
     }
 
     private (bool IsInstalled, LocalPlugin Plugin) IsManifestInstalled(IPluginManifest? manifest)
@@ -3936,7 +3987,7 @@ internal class PluginInstallerWindow : Window, IDisposable
 
         #region SortBy
 
-        public static string SortBy_SearchScore => Loc.Localize("InstallerSearchScore", "Search score");
+        public static string SortBy_SearchScore => "搜索权重";
 
         public static string SortBy_Alphabetical => Loc.Localize("InstallerAlphabetical", "Alphabetical");
 
@@ -4332,20 +4383,6 @@ internal class PluginInstallerWindow : Window, IDisposable
 
         public static string Profiles_RemoveFromAll =>
             Loc.Localize("InstallerProfilesRemoveFromAll", "Remove from all collections");
-
-        #endregion
-
-        #region VerifiedCheckmark
-
-        public static string VerifiedCheckmark_VerifiedTooltip =>
-            Loc.Localize("VerifiedCheckmarkVerifiedTooltip", "This plugin has been reviewed by the Dalamud team.\n" +
-                                                             "It follows our technical and safety criteria, and adheres to our guidelines.");
-
-        public static string VerifiedCheckmark_UnverifiedTooltip =>
-            Loc.Localize("VerifiedCheckmarkUnverifiedTooltip", "This plugin has not been reviewed by the Dalamud team.\n" +
-                                                               "We cannot take any responsibility for custom plugins and repositories.\n" +
-                                                               "Please make absolutely sure that you only install plugins from developers you trust.\n\n" +
-                                                               "You will not receive support for plugins installed from custom repositories on the XIVLauncher & Dalamud server.");
 
         #endregion
     }
