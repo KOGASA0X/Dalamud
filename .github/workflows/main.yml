@@ -87,7 +87,7 @@ jobs:
           # 进入 Release 目录后压缩，避免保留父目录结构
           cd bin/Release
           7z a -t7z latest.7z * -mx=9
-          7z a -tzip latest.zip * -mx=9 -x!latest.7z
+          7z a -tzip latest.zip * -mx=9 '-x!latest.7z'
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
