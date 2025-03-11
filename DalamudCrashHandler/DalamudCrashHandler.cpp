@@ -1019,7 +1019,7 @@ int main() {
                 {
                     const auto link = std::wstring_view(reinterpret_cast<const wchar_t*>(lParam));
                     if (link == L"help") {
-                        ShellExecuteW(hwnd, nullptr, L"https://ottercorp.github.io/faq?utm_source=vectored", nullptr, nullptr, SW_SHOW);
+                        ShellExecuteW(hwnd, nullptr, L"https://info.atmoomen.top", nullptr, nullptr, SW_SHOW);
                     } else if (link == L"logdir") {
                         open_folder_and_select_items(hwnd, logPath.wstring());
                     } else if (link == L"logfile") {
@@ -1027,7 +1027,7 @@ int main() {
                     } else if (link == L"exporttspack") {
                         export_tspack(hwnd, logDir, ws_to_u8(log.str()), troubleshootingPackData);
                     } else if (link == L"discord") {
-                        ShellExecuteW(hwnd, nullptr, L"https://pd.ottercorp.net", nullptr, nullptr, SW_SHOW);
+                        ShellExecuteW(hwnd, nullptr, L"https://discord.gg/dailyroutines", nullptr, nullptr, SW_SHOW);
                     } else if (link == L"resume") {
                         attemptResume = true;
                         DestroyWindow(hwnd);
