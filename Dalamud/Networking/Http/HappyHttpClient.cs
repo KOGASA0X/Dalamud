@@ -1,7 +1,7 @@
 ﻿using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-
+using Dalamud.Configuration.Internal;
 using Dalamud.Plugin.Internal;
 using Dalamud.Utility;
 
@@ -17,7 +17,7 @@ namespace Dalamud.Networking.Http;
 internal class HappyHttpClient : IInternalDisposableService
 {
     public static readonly Lazy<string> randomMachineCode = new(GenerateRandomMachineCode);
-    
+
     /// <summary>
     /// Initializes a new instance of the <see cref="HappyHttpClient"/> class.
     ///
@@ -31,7 +31,7 @@ internal class HappyHttpClient : IInternalDisposableService
         this.SharedHttpClient = new HttpClient(new SocketsHttpHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
-            ConnectCallback        = this.SharedHappyEyeballsCallback.ConnectCallback,
+            ConnectCallback = this.SharedHappyEyeballsCallback.ConnectCallback,
         })
         {
             DefaultRequestHeaders =
@@ -44,27 +44,44 @@ internal class HappyHttpClient : IInternalDisposableService
         };
         this.SharedHttpClient.DefaultRequestHeaders.Add("X-Machine-Token", randomMachineCode.Value);
     }
-    
+
     public static string GenerateRandomMachineCode()
     {
-        var parts = new string[3];
-        for (var i = 0; i < 3; i++)
-            parts[i] = RandomHex(32);
-        
-        return string.Join(":", parts);
-        
-        string RandomHex(int len)
+        var dalamudConfiguration = Service<DalamudConfiguration>.Get();
+
+        if (dalamudConfiguration.XmachineToken != "::")
         {
-            const string hex   = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            var          chars = new char[len];
-            for (var i = 0; i < len; i++)
-            {
-                chars[i] = hex[new Random().Next(36)];
-            }
-            return new string(chars);
+            return dalamudConfiguration.XmachineToken;
+        }
+
+        // generate some guid
+        string guid1 = Guid.NewGuid().ToString();
+        string guid2 = Guid.NewGuid().ToString();
+        string guid3 = Guid.NewGuid().ToString();
+
+        using (var md5 = System.Security.Cryptography.MD5.Create())
+        {
+            byte[] inputBytes1 = System.Text.Encoding.UTF8.GetBytes(guid1);
+            byte[] hashBytes1 = md5.ComputeHash(inputBytes1);
+            string hash1 = BitConverter.ToString(hashBytes1).Replace("-", "");
+
+            byte[] inputBytes2 = System.Text.Encoding.UTF8.GetBytes(guid2);
+            byte[] hashBytes2 = md5.ComputeHash(inputBytes2);
+            string hash2 = BitConverter.ToString(hashBytes2).Replace("-", "");
+
+            byte[] inputBytes3 = System.Text.Encoding.UTF8.GetBytes(guid3);
+            byte[] hashBytes3 = md5.ComputeHash(inputBytes3);
+            string hash3 = BitConverter.ToString(hashBytes3).Replace("-", "");
+
+            string result = $"{hash1}:{hash2}:{hash3}";
+
+            dalamudConfiguration.XmachineToken = result;
+            dalamudConfiguration.QueueSave();
+
+            return result;
         }
     }
-    
+
     /// <summary>
     /// Gets a <see cref="HttpClient"/> meant to be shared across all (standard) requests made by the application,
     /// where custom configurations are not required.

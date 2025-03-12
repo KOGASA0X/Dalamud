@@ -531,6 +531,11 @@ internal sealed class DalamudConfiguration : IInternalDisposableService
     public bool SendUpdateNotificationToChat { get; set; } = false;
 
     /// <summary>
+    /// Gets or sets a x token for http header.
+    /// </summary>
+    public string XmachineToken { get; set; } = "::";
+
+    /// <summary>
     /// Load a configuration from the provided path.
     /// </summary>
     /// <param name="path">Path to read from.</param>
