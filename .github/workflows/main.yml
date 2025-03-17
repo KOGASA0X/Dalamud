@@ -69,13 +69,8 @@ jobs:
           ($env:BRANCH) >> VERSION
           ($env:COMMIT) >> VERSION
           ($env:TAG) >> VERSION
-
-      - name: Build Dalamud
-        run: .\build.ps1 compile
-
-      - name: Test Dalamud
-        run: .\build.ps1 test
-
+      - name: Build and Test Dalamud
+        run: .\build.ps1 ci
       - name: Create hashlist
         run: .\CreateHashList.ps1 .\bin\Release
 

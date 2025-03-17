@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using Nuke.Common;
@@ -5,6 +6,7 @@ using Nuke.Common.Execution;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
+using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.MSBuild;
 using Serilog;
@@ -26,7 +28,7 @@ public class DalamudBuild : NukeBuild
 #else
     readonly Configuration Configuration = Configuration.Release;
 #endif
-
+    
     [Parameter("Whether we are building for documentation - emits generated files")]
     readonly bool IsDocsBuild = false;
 
@@ -65,6 +67,9 @@ public class DalamudBuild : NukeBuild
 
     private static Dictionary<string, string> EnvironmentVariables => new(EnvironmentInfo.Variables);
 
+    private static string ConsoleTemplate => "{Message:l}{NewLine}{Exception}";
+    private static bool IsCIBuild => Environment.GetEnvironmentVariable("CI") == "true";
+
     Target Restore => _ => _
         .Executes(() =>
         {
@@ -78,9 +83,11 @@ public class DalamudBuild : NukeBuild
             // Not necessary, and does not build on Linux
             if (IsDocsBuild)
                 return;
-            
             MSBuildTasks.MSBuild(s => s
                 .SetTargetPath(CImGuiProjectFile)
+#if DEBUG
+                .SetProcessToolPath(Environment.GetEnvironmentVariable("MSBuild"))
+#endif
                 .SetConfiguration(Configuration)
                 .SetTargetPlatform(MSBuildTargetPlatform.x64));
         });
@@ -94,6 +101,9 @@ public class DalamudBuild : NukeBuild
             
             MSBuildTasks.MSBuild(s => s
                 .SetTargetPath(CImPlotProjectFile)
+#if DEBUG
+                .SetProcessToolPath(Environment.GetEnvironmentVariable("MSBuild"))
+#endif
                 .SetConfiguration(Configuration)
                 .SetTargetPlatform(MSBuildTargetPlatform.x64));
         });
@@ -107,6 +117,9 @@ public class DalamudBuild : NukeBuild
             
             MSBuildTasks.MSBuild(s => s
                 .SetTargetPath(CImGuizmoProjectFile)
+#if DEBUG
+                .SetProcessToolPath(Environment.GetEnvironmentVariable("MSBuild"))
+#endif
                 .SetConfiguration(Configuration)
                 .SetTargetPlatform(MSBuildTargetPlatform.x64));
         });
@@ -127,16 +140,20 @@ public class DalamudBuild : NukeBuild
                        .SetProjectFile(DalamudProjectFile)
                        .SetConfiguration(Configuration)
                        .EnableNoRestore();
-
+                if (IsCIBuild)
+                {
+                    s = s
+                        .SetProcessArgumentConfigurator(a => a.Add("/clp:NoSummary")); // Disable MSBuild summary on CI builds
+                }
                 // We need to emit compiler generated files for the docs build, since docfx can't run generators directly
                 // TODO: This fails every build after this because of redefinitions...
+
                 // if (IsDocsBuild)
                 // { 
                 //     Log.Warning("Building for documentation, emitting compiler generated files. This can cause issues on Windows due to path-length limitations");
                 //     s = s
                 //         .SetProperty("IsDocsBuild", "true");
                 // }
-
                 return s;
             });
         });
@@ -146,6 +163,9 @@ public class DalamudBuild : NukeBuild
         {
             MSBuildTasks.MSBuild(s => s
                 .SetTargetPath(DalamudBootProjectFile)
+#if DEBUG
+                .SetProcessToolPath(Environment.GetEnvironmentVariable("MSBuild"))
+#endif
                 .SetConfiguration(Configuration));
         });
     
@@ -154,6 +174,9 @@ public class DalamudBuild : NukeBuild
         {
             MSBuildTasks.MSBuild(s => s
                                       .SetTargetPath(DalamudCrashHandlerProjectFile)
+#if DEBUG
+                                      .SetProcessToolPath(Environment.GetEnvironmentVariable("MSBuild"))
+#endif
                                       .SetConfiguration(Configuration));
         });
 
@@ -172,15 +195,34 @@ public class DalamudBuild : NukeBuild
         {
             MSBuildTasks.MSBuild(s => s
                 .SetTargetPath(InjectorBootProjectFile)
+#if DEBUG
+                .SetProcessToolPath(Environment.GetEnvironmentVariable("MSBuild"))
+#endif
                 .SetConfiguration(Configuration));
         });
 
+    Target SetCILogging => _ => _
+        .DependentFor(Compile)
+        .OnlyWhenStatic(() => IsCIBuild)
+        .Executes(() =>
+        {
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Console(outputTemplate: ConsoleTemplate)
+                .CreateLogger();
+        });
+
     Target Compile => _ => _
-        .DependsOn(CompileDalamud)
-        .DependsOn(CompileDalamudBoot)
-        .DependsOn(CompileDalamudCrashHandler)
-        .DependsOn(CompileInjector)
-        .DependsOn(CompileInjectorBoot);
+    .DependsOn(CompileDalamud)
+    .DependsOn(CompileDalamudBoot)
+    .DependsOn(CompileDalamudCrashHandler)
+    .DependsOn(CompileInjector)
+    .DependsOn(CompileInjectorBoot)
+    ;
+
+    Target CI => _ => _
+        .DependsOn(Compile)
+        .Triggers(Test);
 
     Target Test => _ => _
         .DependsOn(Compile)
@@ -189,6 +231,7 @@ public class DalamudBuild : NukeBuild
             DotNetTasks.DotNetTest(s => s
                 .SetProjectFile(TestProjectFile)
                 .SetConfiguration(Configuration)
+                .AddProperty("WarningLevel", "0")
                 .EnableNoRestore());
         });
 
