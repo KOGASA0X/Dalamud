@@ -64,7 +64,7 @@ internal sealed class DalamudConfiguration : IInternalDisposableService
     public event DalamudConfigurationSavedDelegate? DalamudConfigurationSaved;
 
     public string MainRepoUrl { get; set; } = PluginRepository.MainRepoUrlDailyRoutines;
-    
+
     /// <summary>
     /// Gets or sets a list of muted words.
     /// </summary>
@@ -536,6 +536,11 @@ internal sealed class DalamudConfiguration : IInternalDisposableService
     public string XmachineToken { get; set; } = "::";
 
     /// <summary>
+    /// Gets or sets a custom version string that can be used for special version identification.
+    /// </summary>
+    public string CustomVersionString { get; set; } = string.Empty;
+
+    /// <summary>
     /// Load a configuration from the provided path.
     /// </summary>
     /// <param name="path">Path to read from.</param>
@@ -572,7 +577,7 @@ internal sealed class DalamudConfiguration : IInternalDisposableService
         var splitedValue = deserialized.ProxyHost.Split("://");
         if (splitedValue.Length >= 2)
             deserialized.ProxyHost = splitedValue[1];
-            
+
         try
         {
             deserialized.SetDefaults();

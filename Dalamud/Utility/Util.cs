@@ -82,14 +82,9 @@ public static class Util
     /// <summary>
     /// Gets the assembly version of Dalamud.
     /// </summary>
-    public static string AssemblyVersion => string.IsNullOrWhiteSpace(assemblyVersion) ? "11.0.0.5" : assemblyVersion;
+    public static string AssemblyVersion => string.IsNullOrWhiteSpace(customVersion) ? "11.0.0.8" : customVersion;
 
-    private static string? assemblyVersion;
-    
-    static Util()
-    {
-        _ = Task.Run(async () => assemblyVersion = await GetLatestVersionAsync()).ConfigureAwait(false);
-    }
+    private static string? customVersion = Service<DalamudConfiguration>.Get().CustomVersionString;
 
     /// <summary>
     /// Gets the SCM Version from the assembly, or null if it cannot be found. This method will generally return
@@ -106,34 +101,6 @@ public static class Util
 
         return scmVersionInternal = attrs.First(a => a.Key == "SCMVersion").Value
                                         ?? asm.GetName().Version!.ToString();
-    }
-    
-    public static async Task<string?> GetLatestVersionAsync()
-    {
-        using var httpClient = new HttpClient();
-        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Dalamud");
-        
-        var response = await httpClient.GetStringAsync("https://api.github.com/repos/ottercorp/Dalamud/tags");
-        
-        using var doc = JsonDocument.Parse(response);
-        
-        return doc.RootElement.EnumerateArray()
-                  .Select(tag => {
-                      var name = tag.GetProperty("name").GetString()?.Trim();
-                      if (string.IsNullOrEmpty(name)) return (null, null);
-                
-                      // 去除v前缀并进行语义化版本解析
-                      var versionStr = name.StartsWith("v", StringComparison.OrdinalIgnoreCase) 
-                                           ? name[1..] 
-                                           : name;
-                
-                      return Version.TryParse(versionStr, out var ver) 
-                                 ? (name, ver)
-                                 : (null, null);
-                  })
-                  .Where(x => x.ver != null)
-                  .OrderByDescending(x => x.ver)
-                  .FirstOrDefault().name ?? string.Empty;
     }
 
     /// <summary>
